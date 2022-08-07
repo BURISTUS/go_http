@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"test/db"
@@ -8,17 +9,18 @@ import (
 )
 
 func main() {
-	database, err := db.NewDatabase("localhost:6379")
-	if err != nil {
-		log.Fatalf("Failed to connect to redis: %s", err.Error())
+	host := flag.String("h", "localhost", "There should be host")
+	port := flag.String("p", "6379", "There should be port")
+	database, databaseErr := db.NewDatabase(*host + ":" + *port)
+
+	if databaseErr != nil {
+		log.Fatalf("Failed to connect to redis: %s", databaseErr.Error())
 	}
 
-	//http.HandleFunc("/", handler)
-	//log.Fatal(http.ListenAndServe(":8080", nil))
 	mux := http.NewServeMux()
-	mux.HandleFunc("/test1", routes.Test1(database))
-	//mux.HandleFunc("/test2", test2(database))
-	//mux.HandleFunc("/test3", test1(database))
+	mux.HandleFunc("/test1", routes.JsonSum(database))
+	mux.HandleFunc("/test2", routes.GetHashFromJson)
+	mux.HandleFunc("/test3", routes.TcpClient)
 
 	err2 := http.ListenAndServe(":4000", mux)
 	log.Fatal(err2)
