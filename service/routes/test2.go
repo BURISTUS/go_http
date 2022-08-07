@@ -10,31 +10,31 @@ import (
 )
 
 type SecretData struct {
-	key string `json:"s"`
-	val int    `json:"key"`
+	Val string `json:"s"`
+	Key string `json:"key"`
 }
 
-func Test2(w http.ResponseWriter, r *http.Request) {
-	var d map[string]interface{}
+func GetHashFromJson(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var sc SecretData
 
-	decoderErr := json.NewDecoder(r.Body).Decode(&d)
-	if decoderErr != nil {
-		fmt.Println("decoderErr", decoderErr)
+		decoderErr := json.NewDecoder(r.Body).Decode(&sc)
+		if decoderErr != nil {
+			http.Error(w, "Body decoding problem", http.StatusInternalServerError)
+			return
+		}
+
+		//Создаем новый HMAC с указанием типа хэша и ключа
+		h := hmac.New(sha512.New, []byte(sc.Key))
+		// Записываем данные
+		h.Write([]byte(sc.Val))
+		//Получаем результат закодированный в виде шестнадцатеричной строки
+		sha := hex.EncodeToString(h.Sum(nil))
+
+		fmt.Fprintln(w, sha)
+	default:
+		http.Error(w, "Method is not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-
-	keys := []string{}
-
-	for key, _ := range d {
-		keys = append(keys, key)
-	}
-
-	h := hmac.New(sha512.New, []byte(keys[0]))
-
-	// Write Data to it
-	//h.Write([]byte(data))
-
-	// Get result and encode as hexadecimal string
-	sha := hex.EncodeToString(h.Sum(nil))
-
-	fmt.Println("Result: " + sha)
 }

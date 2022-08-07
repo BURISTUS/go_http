@@ -6,28 +6,62 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
+	"strconv"
+	"strings"
 )
 
-func Test3(w http.ResponseWriter, r *http.Request) {
-	var d map[string]interface{}
+type DataFromJson []struct {
+	A   string
+	B   string
+	Key string
+}
 
-	decoderErr := json.NewDecoder(r.Body).Decode(&d)
-	if decoderErr != nil {
-		fmt.Println("decoderErr", decoderErr)
-	}
+func TcpClient(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var dfj DataFromJson
+		var stringForTcp strings.Builder
+		var stringSlice []string
+		mapResult := make(map[string]int)
 
-	// Подключаемся к сокету
-	conn, _ := net.Dial("tcp", "127.0.0.1:8081")
-	for {
-		// Чтение входных данных от stdin
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Text to send: ")
-		text, _ := reader.ReadString('\n')
-		// Отправляем в socket
-		fmt.Fprintf(conn, text+"\n")
+		buf := make([]byte, 1024)
+
+		decoderErr := json.NewDecoder(r.Body).Decode(&dfj)
+		if decoderErr != nil {
+			http.Error(w, "Body decoding problem", http.StatusInternalServerError)
+			return
+		}
+		//Пробегаемся по слайсу структур и формируем строку
+		for i := range dfj {
+			stringForTcp.WriteString(dfj[i].A + "," + dfj[i].B + "\r\n")
+		}
+		// Подключаемся к сокету
+		conn, connErr := net.Dial("tcp", "127.0.0.1:8081")
+		if connErr != nil {
+			fmt.Fprintln(w, "Socket connection error", connErr)
+			return
+		}
+		// Отправляем в сокет
+		fmt.Fprintf(conn, stringForTcp.String()+"\r\n")
 		// Прослушиваем ответ
-		message, _ := bufio.NewReader(conn).ReadString('\n')
-		fmt.Print("Message from server: " + message)
+		bufio.NewReader(conn).Read(buf)
+		stringSlice = strings.Split(string(buf), "\r\n")
+		//Формируем мапу
+		for i := 0; i < len(stringSlice)-2; i++ {
+			val, _ := strconv.Atoi(stringSlice[i])
+			mapResult[dfj[i].Key] = val
+		}
+
+		byteRes, marshalErr := json.Marshal(mapResult)
+		if marshalErr != nil {
+			fmt.Fprintln(w, "Error during serialization", marshalErr)
+			return
+		}
+
+		fmt.Fprintf(w, string(byteRes))
+	default:
+		http.Error(w, "Method is not allowed", http.StatusMethodNotAllowed)
+		return
 	}
+
 }

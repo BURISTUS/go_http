@@ -3,67 +3,81 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-redis/redis"
 	"net/http"
-	"test/db"
+	"strconv"
 )
 
 type JsonModel struct {
-	key string `json:"key"`
-	val int    `json:"val"`
+	Key string `json:"key"`
+	Val int    `json:"val"`
 }
 
-func Test1(database *db.Database) http.HandlerFunc {
+func JsonSum(database *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var jm JsonModel
-		var d map[string]int
+		switch r.Method {
+		case http.MethodPost:
+			var jm JsonModel
+			result := make(map[string]int)
 
-		decodeErr := json.NewDecoder(r.Body).Decode(&jm)
-		if decodeErr != nil {
-			fmt.Fprintf(w, "wrong schema of json", decodeErr)
+			decodeErr := json.NewDecoder(r.Body).Decode(&jm)
+			if decodeErr != nil {
+				http.Error(w, "Body decoding problem", http.StatusInternalServerError)
+				return
+			}
+
+			// Если в базе есть запись под данным ключем, то
+			if database.Exists(jm.Key).Val() != 0 {
+				stringValueFromDb, getErr := database.Get(jm.Key).Result()
+				if getErr != nil {
+					fmt.Fprintln(w, "Error while getting data from database", getErr)
+					return
+				}
+				//конвертируем строчное значение из базы в числовое
+				intValueFromDb, convertErr := strconv.Atoi(stringValueFromDb)
+				if convertErr != nil {
+					fmt.Fprintln(w, "Error during conversion", convertErr)
+					return
+				}
+				//складываем значение из базы со значением отправленном в json
+				intValueFromDb = jm.Val + intValueFromDb
+
+				//обновляем запись
+				setErr := database.Set(jm.Key, intValueFromDb, 0).Err()
+				if setErr != nil {
+					fmt.Fprintln(w, "Error while setting data to database", setErr)
+					return
+				}
+				//приводим получившиеся значения под мапу, для вывода значения в соответствии с заданием
+				result[jm.Key] = intValueFromDb
+				returnValue, marshalErr := json.Marshal(result)
+				if marshalErr != nil {
+					fmt.Fprintln(w, "Error during serialization", marshalErr)
+					return
+				}
+
+				fmt.Fprintf(w, string(returnValue))
+			} else {
+				//в случае, если записи под отправленным ключем не находится, записываем в бд
+				setErr := database.Set(jm.Key, jm.Val, 0).Err()
+
+				if setErr != nil {
+					fmt.Fprintln(w, "Error while setting data to database", setErr)
+					return
+				}
+				result[jm.Key] = jm.Val
+
+				returnValue, marshalErr := json.Marshal(result)
+				if marshalErr != nil {
+					fmt.Fprintln(w, "Error during serialization", marshalErr)
+					return
+				}
+
+				fmt.Fprintf(w, "Value %s was added to database", returnValue)
+			}
+		default:
+			http.Error(w, "Method is not allowed", http.StatusMethodNotAllowed)
+			return
 		}
-		fmt.Println("jm key", jm.key)
-
-		if database.Client.Exists(jm.key).Val() != 0 {
-			value, err := database.Client.Get(jm.key).Result()
-			json.Unmarshal([]byte(value), &d)
-
-			d[jm.key] = jm.val + d[jm.key]
-			res, marshalErr := json.Marshal(d)
-
-			if marshalErr != nil {
-				fmt.Println("Marshal Error", marshalErr)
-			}
-
-			writeErr := database.Client.Set(jm.key, res, 0).Err()
-
-			if writeErr != nil {
-				fmt.Println("Write error", writeErr)
-			}
-
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			updatedValue, err := database.Client.Get(jm.key).Result()
-			fmt.Fprintln(w, updatedValue)
-			fmt.Println("Значение обнавлено")
-		} else {
-			setErr := database.Client.Set(jm.key, jm.val, 0).Err()
-			fmt.Println(jm.key)
-
-			if setErr != nil {
-				fmt.Println(setErr)
-			}
-
-			val, getErr := database.Client.Get(jm.key).Result()
-
-			if getErr != nil {
-				fmt.Println("Get error", getErr)
-			}
-			fmt.Println("Значение добавлено")
-			fmt.Fprintln(w, val)
-
-		}
-
 	}
 }
