@@ -9,8 +9,10 @@ import (
 )
 
 func main() {
-	host := flag.String("h", "localhost", "There should be host")
+	//считывание флагов с базы
+	host := flag.String("h", "127.0.0.1", "There should be host")
 	port := flag.String("p", "6379", "There should be port")
+	flag.Parse()
 	database, databaseErr := db.NewDatabase(*host + ":" + *port)
 
 	if databaseErr != nil {
